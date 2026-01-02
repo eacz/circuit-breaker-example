@@ -6,6 +6,9 @@ import { ProtectedApiService } from './protected-api/protected-api.service';
 import { DemoController } from './demo/demo.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DemodbModule } from './demodb/demodb.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { PaymentsModule } from './payments/payment.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -19,7 +22,10 @@ import { DemodbModule } from './demodb/demodb.module';
       autoLoadEntities: true,
       synchronize: true,
     }),
+    ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot(),
     DemodbModule,
+    PaymentsModule,
   ],
   controllers: [AppController, DemoController],
   providers: [AppService, ExternalApiService, ProtectedApiService],

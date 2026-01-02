@@ -180,6 +180,134 @@ Logs:
 
 ---
 
+# Circuit Breaker + Retry + Persistencia (Diseño Final)
+
+Este documento explica el **diseño final correcto** del ejemplo de Circuit Breaker aplicado a pagos,
+incluyendo persistencia en base de datos y reprocesamiento automático.
+
+---
+
+## Problema inicial
+
+Cuando el servicio externo de pagos se caía:
+
+- Los requests fallaban correctamente
+- El Circuit Breaker abría
+- Los pagos quedaban en estado `PENDING`
+
+Pero al **volver a levantar el servicio**, los pagos **no se procesaban solos**.
+
+---
+
+## Por qué NO se procesaban automáticamente
+
+El sistema original dependía de un `EventEmitter`:
+
+- El evento `payment.deferred` se emitía **solo en el momento del fallo**
+- Cuando el servicio externo volvía:
+  - No se emitía ningún evento nuevo
+  - Nadie reintentaba los pagos pendientes
+
+Conclusión:  
+👉 **el sistema no sabía que el servicio había vuelto**
+
+---
+
+## Principio clave de arquitectura
+
+> **Circuit Breaker ≠ Reintentos**
+
+- Circuit Breaker:
+  - Protege el sistema
+  - Evita fallos en cascada
+- Reintentos:
+  - Son asincrónicos
+  - Deben ser independientes del request original
+  - Normalmente usan jobs, colas o workers
+
+---
+
+## Diseño final correcto
+
+El diseño se apoya en un principio fundamental:
+
+> **La base de datos es la fuente de verdad**
+
+### Estados del pago
+
+| Estado   | Significado |
+|--------|-------------|
+| PENDING | Pago creado pero no confirmado |
+| PAID   | Pago confirmado correctamente |
+
+---
+
+## Flujo completo
+
+```
+Request
+  ↓
+Crear Payment (PENDING)
+  ↓
+Intentar cobrar (Circuit Breaker)
+  ↓
+Si falla → queda PENDING
+  ↓
+Job periódico reintenta
+  ↓
+Pago pasa a PAID
+```
+
+---
+
+## Rol real del Circuit Breaker
+
+El Circuit Breaker **solo** se usa para:
+
+- Proteger el servicio de pagos
+- Cortar intentos cuando el servicio externo está caído
+- Evitar timeouts y sobrecarga
+
+No:
+- Maneja reintentos
+- Garantiza ejecución
+- Recupera estados
+
+---
+
+## Reprocesamiento automático (Retry)
+
+Se implementa un **job programado** que:
+
+- Corre cada X segundos
+- Busca pagos con estado `PENDING`
+- Intenta cobrarlos nuevamente
+- Actualiza el estado a `PAID` si tiene éxito
+
+Esto permite:
+
+- Recuperación automática
+- Consistencia eventual
+- Observabilidad en tiempo real desde la DB
+
+Este "job" no es un mas que una configuracion de schedule con @nest/schedule, usado como simil de un orquestador de pub/sub para poder replicar este funcionamiento basico de forma simple y en local. 
+
+---
+
+## Conclusión
+
+Este diseño final logra:
+
+- Circuit Breaker real
+- Persistencia consistente
+- Reintentos automáticos
+- Sin duplicados
+- Sin dependencia de eventos efímeros
+- Comportamiento observable desde la base de datos
+
+No es un demo:  
+👉 **es un patrón de backend real usado en producción**.
+
 ## Librerías utilizadas
 
 - NestJS
